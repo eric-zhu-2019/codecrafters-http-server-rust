@@ -34,12 +34,13 @@ fn handle_request(mut stream: TcpStream) -> Result<()> {
                     return Ok(());
                 }
                 stream.write(OK.as_bytes())?;
+                let content = paths[1..].join("/");
                 let hdr = format!(
                     "Content-Type: text/plain\r\nContent-Length: {}\r\n\r\n",
-                    paths[1].len()
+                    content.len()
                 );
                 stream.write(hdr.as_bytes())?;
-                stream.write(paths[1].as_bytes())?;
+                stream.write(content.as_bytes())?;
                 stream.flush()?;
                 return Ok(());
             }
