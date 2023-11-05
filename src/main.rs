@@ -24,6 +24,7 @@ fn handle_request(mut stream: TcpStream) -> Result<()> {
         match paths[0] {
             "" => {
                 stream.write(OK.as_bytes())?;
+                stream.write("\r\n".as_bytes())?;
                 stream.flush()?;
                 return Ok(());
             }
