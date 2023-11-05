@@ -7,14 +7,26 @@ use std::net::TcpStream;
 const NOTFOUND: &'static str = "HTTP/1.1 404 Not Found\r\n\r\n";
 const OK: &'static str = "HTTP/1.1 200 Ok\r\n";
 
-fn respond_error(mut stream: &TcpStream) {
-    stream.write(NOTFOUND.as_bytes()).unwrap();
-    stream.flush().unwrap();
+fn respond_error(mut stream: &TcpStream) -> Result<()> {
+    stream.write(NOTFOUND.as_bytes())?;
+    stream.flush()?;
+    Ok(())
+}
+fn respond_content(mut stream: &TcpStream, content: &str) -> Result<()> {
+    stream.write(OK.as_bytes())?;
+    let hdr = format!(
+        "Content-Type: text/plain\r\nContent-Length: {}\r\n\r\n",
+        content.len()
+    );
+    stream.write(hdr.as_bytes())?;
+    stream.write(content.as_bytes())?;
+    stream.flush()?;
+    Ok(())
 }
 fn handle_request(mut stream: TcpStream) -> Result<()> {
-    let mut reader = std::io::BufReader::new(&stream);
-    let mut start_line = String::new();
-    reader.read_line(&mut start_line)?;
+    let reader = std::io::BufReader::new(&stream);
+    let mut line_iter = reader.lines();
+    let start_line = line_iter.next().unwrap()?;
 
     let mut iter = start_line.split_whitespace();
     if let Some("GET") = iter.next() {
@@ -29,29 +41,31 @@ fn handle_request(mut stream: TcpStream) -> Result<()> {
                 return Ok(());
             }
             "echo" => {
-                //println!("{:?}", paths);
                 if paths.len() < 2 {
-                    respond_error(&stream);
-                    return Ok(());
+                    return respond_error(&stream);
                 }
-                stream.write(OK.as_bytes())?;
                 let content = paths[1..].join("/");
-                let hdr = format!(
-                    "Content-Type: text/plain\r\nContent-Length: {}\r\n\r\n",
-                    content.len()
-                );
-                stream.write(hdr.as_bytes())?;
-                stream.write(content.as_bytes())?;
-                stream.flush()?;
-                return Ok(());
+                return respond_content(&stream, &content);
             }
+            "user-agent" => {
+                //line_iter.for_each(|line| println!("{}", line.as_ref().unwrap()));
+
+                if let Some(user_agent) =
+                    line_iter.find(|line| line.as_ref().unwrap().starts_with("User-Agent:"))
+                {
+                    return respond_content(
+                        &stream,
+                        user_agent?.split_whitespace().collect::<Vec<&str>>()[1],
+                    );
+                } else {
+                    return respond_error(&stream);
+                }
+            }
+
             _ => {}
         }
     }
-    stream.write(NOTFOUND.as_bytes())?;
-    stream.flush()?;
-
-    Ok(())
+    respond_error(&stream)
 }
 
 fn main() -> Result<()> {
