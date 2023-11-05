@@ -5,7 +5,7 @@ use std::net::TcpListener;
 use std::net::TcpStream;
 
 const NOTFOUND: &'static str = "HTTP/1.1 404 Not Found\r\n\r\n";
-const OK: &'static str = "HTTP/1.1 200 Ok\r\n\r\n";
+const OK: &'static str = "HTTP/1.1 200 Ok\r\n";
 
 fn respond_error(mut stream: &TcpStream) {
     stream.write(NOTFOUND.as_bytes()).unwrap();
