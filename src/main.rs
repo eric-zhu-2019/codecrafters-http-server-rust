@@ -4,8 +4,8 @@ use anyhow::Result;
 use std::net::TcpListener;
 use std::net::TcpStream;
 
-const NOTFOUND: &'static str = "HTTP/1.1 404 Not Found\r\n";
-const OK: &'static str = "HTTP/1.1 200 Ok\r\n";
+const NOTFOUND: &'static str = "HTTP/1.1 404 Not Found\r\n\r\n";
+const OK: &'static str = "HTTP/1.1 200 Ok\r\n\r\n";
 
 fn respond_error(mut stream: &TcpStream) {
     stream.write(NOTFOUND.as_bytes()).unwrap();
@@ -28,6 +28,7 @@ fn handle_request(mut stream: TcpStream) -> Result<()> {
                 return Ok(());
             }
             "echo" => {
+                //println!("{:?}", paths);
                 if paths.len() < 2 {
                     respond_error(&stream);
                     return Ok(());
