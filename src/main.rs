@@ -23,7 +23,7 @@ fn respond_content(mut stream: &TcpStream, content: &str) -> Result<()> {
     stream.flush()?;
     Ok(())
 }
-fn handle_request(mut stream: TcpStream) -> Result<()> {
+async fn handle_request(mut stream: TcpStream) -> Result<()> {
     let reader = std::io::BufReader::new(&stream);
     let mut line_iter = reader.lines();
     let start_line = line_iter.next().unwrap()?;
@@ -68,7 +68,8 @@ fn handle_request(mut stream: TcpStream) -> Result<()> {
     respond_error(&stream)
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     println!("Logs from your program will appear here!");
 
@@ -78,7 +79,9 @@ fn main() -> Result<()> {
         match stream {
             Ok(stream) => {
                 println!("accepted new connection");
-                handle_request(stream)?;
+                tokio::spawn(async move {
+                    return handle_request(stream).await;
+                });
             }
             Err(e) => {
                 println!("error: {}", e);
