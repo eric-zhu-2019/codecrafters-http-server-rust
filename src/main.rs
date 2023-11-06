@@ -1,13 +1,10 @@
 use std::collections::HashMap;
 use std::fs::File;
-use std::hash::Hash;
 use std::io::prelude::*;
 use std::io::{BufRead, Write};
-use std::path::{self, Path, PathBuf};
-use std::str::FromStr;
+use std::path::PathBuf;
 // Uncomment this block to pass the first stage
 use anyhow::Result;
-use itertools::Itertools;
 use std::net::TcpListener;
 use std::net::TcpStream;
 
