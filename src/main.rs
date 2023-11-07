@@ -168,12 +168,10 @@ async fn handle_request(ctx: &Context) -> Result<()> {
 async fn main() -> Result<()> {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     let args: Vec<String> = std::env::args().collect::<Vec<String>>();
-    if args.len() < 3 {
-        println!("args: {:?}", args);
-        println!("Usage: {} --directory <root_dir>", args[0]);
-        return Ok(());
+    let mut root_dir = String::new();
+    if args.len() >= 3 {
+        root_dir = args[2].to_string();
     }
-    let root_dir = &args[2];
 
     let listener = TcpListener::bind("127.0.0.1:4221").unwrap();
 
