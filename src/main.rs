@@ -121,7 +121,7 @@ async fn handle_request_get(request: &Request, ctx: &Context) -> Result<()> {
                 let mut buf = [0; 1024*1024];
                 stream.write(OK.as_bytes())?;
                 let hdr = format!(
-                    "Content-Type: pplication/octet-stream\r\nContent-Length: {}\r\n\r\n",
+                    "Content-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n",
                     file.metadata().unwrap().len());
                 stream.write(hdr.as_bytes())?;
 
