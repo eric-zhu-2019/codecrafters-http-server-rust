@@ -143,7 +143,10 @@ async fn handle_request_get(request: &Request, ctx: &Context) -> Result<()> {
             }
         }
 
-        _ => {}
+        _ => {
+            stream.write(NOTFOUND.as_bytes())?;
+            stream.flush()?;
+        }
     }
     Ok(())
 }
