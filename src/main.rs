@@ -118,7 +118,7 @@ async fn handle_request_get(request: &Request, ctx: &Context) -> Result<()> {
             file.push(&paths);
 
             if let Ok(mut file) = File::open(file.to_path_buf()) {
-                let mut buf = [0; 4096];
+                let mut buf = [0; 1024*1024];
                 stream.write(OK.as_bytes())?;
                 let hdr = format!(
                     "Content-Type: pplication/octet-stream\r\nContent-Length: {}\r\n\r\n",
@@ -133,8 +133,8 @@ async fn handle_request_get(request: &Request, ctx: &Context) -> Result<()> {
                         }
                         stream.write(&buf[..n])?;
                     } else {
-                        stream.write(NOTFOUND.as_bytes())?;
                         stream.flush()?;
+                        break;
                     }
                 }
             } else {
