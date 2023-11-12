@@ -173,7 +173,7 @@ fn upload_file(request: &Request, filepath: PathBuf, reader: &mut BufReader<&Tcp
                         Ok(n) => {
                             println!("n={}", n);
                             len -= n;
-                            file.write_all(&mut buf)?;
+                            file.write_all(&buf[..n])?;
                             if len == 0 {
                                 break;
                             }
