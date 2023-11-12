@@ -10,7 +10,7 @@ use std::net::TcpStream;
 
 const NOTFOUND: &'static str = "HTTP/1.1 404 Not Found\r\n\r\n";
 const OK: &'static str = "HTTP/1.1 200 Ok\r\n";
-const OK201: &'static str = "HTTP/1.1 201 Ok\r\n";
+const OK201: &'static str = "HTTP/1.1 201 Created\r\n";
 
 #[derive(Debug, Clone)]
 struct Request {
