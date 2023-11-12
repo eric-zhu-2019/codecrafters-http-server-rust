@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::{BufReader, Write};
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
+use std::thread;
 // Uncomment this block to pass the first stage
 use anyhow::{Result, anyhow};
 use std::net::TcpListener;
@@ -31,7 +32,7 @@ impl Request {
                 let mut line = String::new();
                 loop {
                     reader.read_line(&mut line)?;
-                    println!("line: {:?}", line);
+                    //println!("line: {:?}", line);
                     if line.is_empty() || line == "\r\n".to_string() {
                         break;
                     }
@@ -91,7 +92,71 @@ fn respond_content(mut stream: &TcpStream, content: &str) -> Result<()> {
     stream.flush()?;
     Ok(())
 }
-async fn handle_request_get(request: &Request, ctx: &Context) -> Result<()> {
+
+fn retrieve_a_file(filepath: &PathBuf, mut stream: &TcpStream) -> Result<()> {
+
+    if !Path::is_file(filepath) {
+        return respond_error(stream);
+    }
+
+    if let Ok(mut file) = File::open(filepath.to_path_buf()) {
+        let mut buf = [0; 1024 * 1024];
+        let mut total = 0_u64;
+        let sz = filepath.metadata().unwrap().len();
+        let hdr = format!(
+            "Content-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n",
+            sz);
+
+        match stream.write(OK.as_bytes()) {
+            Err(e) => {
+                println!("3 write error: {}", e);
+                return Err(anyhow!("retrieve_a_file write error: {}", e));
+            }
+            Ok(_) => {}
+        }
+        match stream.write(hdr.as_bytes()) {
+            Ok(_) => {
+            }
+            Err(e) => {
+                println!("6 write error: {}", e);
+                return Err(anyhow!("retrieve_a_file write error: {}", e));
+            }
+        }
+
+        loop {
+            match file.read(&mut buf) {
+                Ok(0) => {
+                    if sz != total {
+                        println!("error file size not match");
+                    }
+                    break;
+                }
+                Ok(n) => {
+                    match stream.write(&buf[..n]) {
+                        Ok(_) => {
+                        }
+                        Err(e) => {
+                            println!("9 write error: {}", e);
+                            return Err(anyhow!("retrieve_a_file write error: {}", e));
+                        }
+                    }
+                    total += n as u64;
+                }
+                Err(e) => {
+                    println!("read error: {}", e);
+                    return Err(anyhow!("retrieve_a_file read error: {}", e));
+                }
+            } 
+        }
+    } else {
+        return respond_error(stream);
+    }
+
+    stream.flush()?;
+    Ok(())
+}
+
+fn handle_request_get(request: &Request, ctx: &Context) -> Result<()> {
     let mut stream = &ctx.stream;
     match request.paths[0].as_str() {
         "" => {
@@ -115,37 +180,21 @@ async fn handle_request_get(request: &Request, ctx: &Context) -> Result<()> {
             }
         }
         "files" => {
-            println!("paths: {:?}", request.paths);
-            println!("root_dir: {:?}", ctx.root_dir);
+            //println!("paths: {:?}", request.paths);
+            //println!("root_dir: {:?}", ctx.root_dir);
             let paths: PathBuf = request.paths.iter().skip(1).collect();
             let mut file = PathBuf::new();
             file.push(&ctx.root_dir);
             file.push(&paths);
-
-            if let Ok(mut file) = File::open(file.to_path_buf()) {
-                let mut buf = [0; 1024 * 1024];
-                stream.write(OK.as_bytes())?;
-                let hdr = format!(
-                    "Content-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n",
-                    file.metadata().unwrap().len()
-                );
-                stream.write(hdr.as_bytes())?;
-
-                loop {
-                    if let Ok(n) = file.read(&mut buf) {
-                        if n == 0 {
-                            stream.flush()?;
-                            break;
-                        }
-                        stream.write(&buf[..n])?;
-                    } else {
-                        stream.flush()?;
-                        break;
-                    }
+            match retrieve_a_file(&file, stream) {
+                Ok(_) => {
                 }
-            } else {
-                stream.write(NOTFOUND.as_bytes())?;
-                stream.flush()?;
+                Err(e) => {
+                    println!("retrive_a_file error: {}", e);
+                    stream.write(NOTFOUND.as_bytes())?;
+                    stream.flush()?;
+                }
+                            
             }
         }
 
@@ -199,7 +248,7 @@ fn upload_file(request: &Request, filepath: PathBuf, reader: &mut BufReader<&Tcp
     Ok(())
 }
 
-async fn handle_request_post(request: &Request, ctx: &Context, reader: &mut BufReader<&TcpStream>) -> Result<()> {
+fn handle_request_post(request: &Request, ctx: &Context, reader: &mut BufReader<&TcpStream>) -> Result<()> {
     let mut stream = &ctx.stream;
     match request.paths[0].as_str() {
         "files" => {
@@ -227,16 +276,16 @@ async fn handle_request_post(request: &Request, ctx: &Context, reader: &mut BufR
     Ok(())
 }
 
-async fn handle_request(ctx: &Context) -> Result<()> {
+fn handle_request(ctx: &Context) -> Result<()> {
     let stream = &ctx.stream;
     let mut reader = BufReader::new(stream);
     if let Ok(request) = Request::new(&mut reader) {
         match request.method.as_str() {
             "GET" => {
-                return handle_request_get(&request, ctx).await;
+                return handle_request_get(&request, ctx);//.await;
             }
             "POST" => {
-                return handle_request_post(&request, ctx, &mut reader).await;
+                return handle_request_post(&request, ctx, &mut reader);//.await;
             }
             _ => {}
         }
@@ -259,11 +308,13 @@ async fn main() -> Result<()> {
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
-                println!("accepted new connection");
+                //println!("accepted new connection");
 
                 let ctx = Context::new(root_dir.as_str(), stream);
-                tokio::spawn(async move {
-                    return handle_request(&ctx).await;
+                thread::spawn(move || {
+                    if let Err(e) = handle_request(&ctx) {
+                        println!("handle_request has error: {}", e);
+                    }
                 });
             }
             Err(e) => {
