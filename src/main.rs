@@ -1,15 +1,16 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::prelude::*;
-use std::io::{BufRead, Write};
+use std::io::{BufReader, Write};
 use std::path::PathBuf;
 // Uncomment this block to pass the first stage
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use std::net::TcpListener;
 use std::net::TcpStream;
 
 const NOTFOUND: &'static str = "HTTP/1.1 404 Not Found\r\n\r\n";
 const OK: &'static str = "HTTP/1.1 200 Ok\r\n";
+const OK201: &'static str = "HTTP/1.1 201 Ok\r\n";
 
 #[derive(Debug, Clone)]
 struct Request {
@@ -18,7 +19,7 @@ struct Request {
     headers: HashMap<String, String>,
 }
 impl Request {
-    fn new(mut reader: std::io::BufReader<&TcpStream>) -> Result<Request> {
+    fn new(reader: &mut BufReader<&TcpStream>) -> Result<Request> {
         let mut start_line = String::new();
         reader.read_line(&mut start_line)?;
         let mut iter = start_line.split_whitespace();
@@ -30,6 +31,7 @@ impl Request {
                 let mut line = String::new();
                 loop {
                     reader.read_line(&mut line)?;
+                    println!("line: {:?}", line);
                     if line.is_empty() || line == "\r\n".to_string() {
                         break;
                     }
@@ -66,7 +68,10 @@ struct Context {
 
 impl Context {
     fn new(root_dir: &str, stream: TcpStream) -> Self {
-        Self { root_dir: root_dir.to_string(), stream }
+        Self {
+            root_dir: root_dir.to_string(),
+            stream,
+        }
     }
 }
 
@@ -118,16 +123,17 @@ async fn handle_request_get(request: &Request, ctx: &Context) -> Result<()> {
             file.push(&paths);
 
             if let Ok(mut file) = File::open(file.to_path_buf()) {
-                let mut buf = [0; 1024*1024];
+                let mut buf = [0; 1024 * 1024];
                 stream.write(OK.as_bytes())?;
                 let hdr = format!(
                     "Content-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n",
-                    file.metadata().unwrap().len());
+                    file.metadata().unwrap().len()
+                );
                 stream.write(hdr.as_bytes())?;
 
                 loop {
                     if let Ok(n) = file.read(&mut buf) {
-                        if  n == 0 {
+                        if n == 0 {
                             stream.flush()?;
                             break;
                         }
@@ -151,17 +157,89 @@ async fn handle_request_get(request: &Request, ctx: &Context) -> Result<()> {
     Ok(())
 }
 
+fn upload_file(request: &Request, filepath: PathBuf, reader: &mut BufReader<&TcpStream>) -> Result<()> {
+    if let Ok(mut file) = File::create(filepath.to_path_buf()) {
+        // get the length of file
+        println!("request: {:?}", request);
+        if let Some(lenstr) = request.headers.get("Content-Length") {
+            if let Ok(mut len) = usize::from_str_radix(lenstr, 10) {
+                println!("len={}", len);
+                loop {
+                    let mut buf = [0; 4096];
+                    match reader.read(&mut buf) {
+                        Ok(0)  => {
+                            break;
+                        }
+                        Ok(n) => {
+                            println!("n={}", n);
+                            len -= n;
+                            file.write_all(&mut buf)?;
+                            if len == 0 {
+                                break;
+                            }
+                        }
+                        Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                            println!("would block");
+                            break;
+                        }
+                        Err(e) => {
+                            return Err(anyhow!("read error: {}", e));
+                        }
+                    }
+                }
+            }
+        } else {
+            return Err(anyhow!("no content-length"));
+        }
+    } else {
+        return Err(anyhow!("create file failed"));
+    }
+    println!("upload file {:?} ok", filepath.to_str());
+
+    Ok(())
+}
+
+async fn handle_request_post(request: &Request, ctx: &Context, reader: &mut BufReader<&TcpStream>) -> Result<()> {
+    let mut stream = &ctx.stream;
+    match request.paths[0].as_str() {
+        "files" => {
+            // create file firslty
+            let paths: PathBuf = request.paths.iter().skip(1).collect();
+            let mut file = PathBuf::from(&ctx.root_dir);
+            file.push(&paths);
+            match upload_file(&request, file, reader) {
+                Ok(()) => {
+                    stream.write(OK201.as_bytes())?;
+                    stream.flush()?;
+                }
+                e => {
+                    stream.write(NOTFOUND.as_bytes())?;
+                    stream.flush()?;
+                    return e;
+                }
+            }
+        }
+        _ => {
+            let _ = respond_error(stream);
+        }
+    }
+
+    Ok(())
+}
+
 async fn handle_request(ctx: &Context) -> Result<()> {
     let stream = &ctx.stream;
-    let reader = std::io::BufReader::new(stream);
-    if let Ok(request) = Request::new(reader) {
+    let mut reader = BufReader::new(stream);
+    if let Ok(request) = Request::new(&mut reader) {
         match request.method.as_str() {
             "GET" => {
                 return handle_request_get(&request, ctx).await;
             }
+            "POST" => {
+                return handle_request_post(&request, ctx, &mut reader).await;
+            }
             _ => {}
         }
-
     }
 
     respond_error(&stream)
